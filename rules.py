@@ -13,6 +13,8 @@ import sys
 import time
 
 def RunUnitTest(env, target, source):
+    if env['ENV'].has_key('BUILD_ONLY'):
+        return
     import subprocess
     test = str(source[0].abspath)
     logfile = open(target[0].abspath, 'w')
@@ -23,6 +25,13 @@ def RunUnitTest(env, target, source):
                 env[env['_venv'][tgt]]._path, test)]
     else:
         cmd = [test]
+        if env['ENV'].has_key('VALGRIND'):
+            s = env['ENV']['VALGRIND']
+            s += " --suppressions=" + env['ENV']['HOME'] + "/.valgrind.supp"
+            s += " --track-origins=yes --num-callers=50 --show-possibly-lost=no"
+            s += " --leak-check=full --error-limit=no"
+            s += " --log-file=" + target[0].abspath + " " + test
+            cmd = s.split()
     ShEnv = {env['ENV_SHLIB_PATH']: 'build/lib',
              'HEAPCHECK': 'normal',
              'PPROF_PATH': 'build/bin/pprof',
@@ -44,7 +53,7 @@ def RunUnitTest(env, target, source):
         return
 
     if code == 0:
-        print test + '\033[94m' + " PASS" + '\033[0m'
+        print test + '\033[92m' + " PASS" + '\033[0m'
     else:
         logfile.write('[  FAILED  ] ')
         if code < 0:
@@ -120,7 +129,7 @@ def UnitTest(env, name, sources):
     test_env = env.Clone()
     if sys.platform != 'darwin' and env.get('OPT') != 'coverage':
         test_env.Append(LIBPATH = '#/build/lib')
-        test_env.Append(LIBS = ['tcmalloc'])
+#       test_env.Append(LIBS = ['tcmalloc'])
     return test_env.Program(name, sources)
 
 def GenerateBuildInfoCode(env, target, source, path):
