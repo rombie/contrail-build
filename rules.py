@@ -487,7 +487,6 @@ def CreateTypeBuilder(env):
                       emitter = TypeTargetGen)
     env.Append(BUILDERS = { 'TypeAutogen' : builder})
 
-<<<<<<< HEAD
 # Check for unsupported/buggy compilers.
 def CheckBuildConfiguration(conf):
 
@@ -500,8 +499,6 @@ def CheckBuildConfiguration(conf):
             exit(1)
     return conf.Finish()
 
-def SetupBuildEnvironment(conf):
-=======
 def PyTestSuiteCov(target, source, env):
     for test in source:
         log = test.name + '.log'
@@ -516,7 +513,6 @@ def PyTestSuiteCov(target, source, env):
     return None
 
 def SetupBuildEnvironment(env):
->>>>>>> github/master
     AddOption('--optimization', dest = 'opt',
               action='store', default='debug',
               choices = ['debug', 'production', 'coverage', 'profile'],
@@ -580,11 +576,9 @@ def SetupBuildEnvironment(env):
     env.AddMethod(ThriftGenCppFunc, "ThriftGenCpp")
     CreateIFMapBuilder(env)
     CreateTypeBuilder(env)
-<<<<<<< HEAD
 
-    return env
-=======
     PyTestSuiteCovBuilder = Builder(action = PyTestSuiteCov)
     env.Append(BUILDERS = {'PyTestSuiteCov' : PyTestSuiteCovBuilder})
->>>>>>> github/master
+
+    return env
 # SetupBuildEnvironment
