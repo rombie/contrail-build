@@ -512,7 +512,7 @@ def PyTestSuiteCov(target, source, env):
         RunUnitTest(env, [env.File(logfile)], [env.File(test)], 300)
     return None
 
-def SetupBuildEnvironment(env):
+def SetupBuildEnvironment(conf):
     AddOption('--optimization', dest = 'opt',
               action='store', default='debug',
               choices = ['debug', 'production', 'coverage', 'profile'],
