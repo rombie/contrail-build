@@ -11,6 +11,7 @@ import SCons.Util
 import subprocess
 import sys
 import time
+import commands
 
 def RunUnitTest(env, target, source):
     if env['ENV'].has_key('BUILD_ONLY'):
@@ -476,7 +477,19 @@ def CreateTypeBuilder(env):
                       emitter = TypeTargetGen)
     env.Append(BUILDERS = { 'TypeAutogen' : builder})
 
-def SetupBuildEnvironment(env):
+# Check for unsupported/buggy compilers.
+def CheckBuildConfiguration(conf):
+
+    # gcc 4.7.0 generates buggy code when optimization is turned on.
+    opt_level = GetOption('opt')
+    if opt_level == 'production' or opt_level == 'profile':
+        if commands.getoutput(conf.env['CC'] + ' -dumpversion') == "4.7.0":
+            print "Unsupported/Buggy compiler gcc 4.7.0 for building " + \
+                  "optimized binaries"
+            exit(1)
+    return conf.Finish()
+
+def SetupBuildEnvironment(conf):
     AddOption('--optimization', dest = 'opt',
               action='store', default='debug',
               choices = ['debug', 'production', 'coverage', 'profile'],
@@ -485,6 +498,8 @@ def SetupBuildEnvironment(env):
     AddOption('--target', dest = 'target',
               action='store',
               choices = ['i686', 'x86_64'])
+
+    env = CheckBuildConfiguration(conf)
 
     env['OPT'] = GetOption('opt')
     env['TARGET_MACHINE'] = GetOption('target')
@@ -538,4 +553,6 @@ def SetupBuildEnvironment(env):
     env.AddMethod(ThriftGenCppFunc, "ThriftGenCpp")
     CreateIFMapBuilder(env)
     CreateTypeBuilder(env)
+
+    return env
 # SetupBuildEnvironment
