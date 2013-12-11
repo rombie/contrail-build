@@ -513,8 +513,6 @@ def PyTestSuiteCov(target, source, env):
         RunUnitTest(env, [env.File(logfile)], [env.File(test)], 300)
     return None
 
-<<<<<<< HEAD
-=======
 def PlatformDarwin(env):
     if not 'SDKROOT' in env['ENV']:
         env['ENV']['SDKROOT'] = '/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX10.7.sdk'
@@ -537,7 +535,6 @@ def PlatformDarwin(env):
 #   env.Append(LIBPATH = env['ENV']['SDKROOT'] + '/usr/lib')
 #   env.Append(LIBS = 'c++.1')
 
->>>>>>> github/ananth_commit
 def SetupBuildEnvironment(conf):
     AddOption('--optimization', dest = 'opt',
               action='store', default='debug',
