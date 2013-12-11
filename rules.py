@@ -492,7 +492,8 @@ def CheckBuildConfiguration(conf):
 
     # gcc 4.7.0 generates buggy code when optimization is turned on.
     opt_level = GetOption('opt')
-    if opt_level == 'production' or opt_level == 'profile':
+    if ((opt_level == 'production' or opt_level == 'profile') and \
+        (conf.env['CC'].endswith("gcc") or conf.env['CC'].endswith("g++"))):
         if commands.getoutput(conf.env['CC'] + ' -dumpversion') == "4.7.0":
             print "Unsupported/Buggy compiler gcc 4.7.0 for building " + \
                   "optimized binaries"
@@ -512,6 +513,31 @@ def PyTestSuiteCov(target, source, env):
         RunUnitTest(env, [env.File(logfile)], [env.File(test)], 300)
     return None
 
+<<<<<<< HEAD
+=======
+def PlatformDarwin(env):
+    if not 'SDKROOT' in env['ENV']:
+        env['ENV']['SDKROOT'] = '/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX10.7.sdk'
+
+    if not 'DEVELOPER_BIN_DIR' in env['ENV']:
+        env['ENV']['DEVELOPER_BIN_DIR'] = '/Applications/Xcode.app/Contents/Developer/usr/bin'
+
+    env.AppendENVPath('PATH', env['ENV']['DEVELOPER_BIN_DIR'])
+
+    if not 'DT_TOOLCHAIN_DIR' in env['ENV']:
+        env['ENV']['DT_TOOLCHAIN_DIR'] = '/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain'
+
+    env.AppendENVPath('PATH', env['ENV']['DT_TOOLCHAIN_DIR'] + '/usr/bin')
+
+    env['CXX'] = 'clang++'
+    env.Append(CPPPATH = [env['ENV']['SDKROOT'] + '/usr/include',
+#                         env['ENV']['SDKROOT'] + '/usr/include/c++/v1',
+                          env['ENV']['SDKROOT'] + '/usr/include/c++/4.2.1',
+                          ])
+#   env.Append(LIBPATH = env['ENV']['SDKROOT'] + '/usr/lib')
+#   env.Append(LIBS = 'c++.1')
+
+>>>>>>> github/ananth_commit
 def SetupBuildEnvironment(conf):
     AddOption('--optimization', dest = 'opt',
               action='store', default='debug',
@@ -528,6 +554,7 @@ def SetupBuildEnvironment(conf):
     env['TARGET_MACHINE'] = GetOption('target')
 
     if sys.platform == 'darwin':
+        PlatformDarwin(env)
         env['ENV_SHLIB_PATH'] = 'DYLD_LIBRARY_PATH'
     else:
         env['ENV_SHLIB_PATH'] = 'LD_LIBRARY_PATH'
