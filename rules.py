@@ -13,7 +13,7 @@ import sys
 import time
 import commands
 
-def RunUnitTest(env, target, source):
+def RunUnitTest(env, target, source, timeout = 60):
     if env['ENV'].has_key('BUILD_ONLY'):
         return
     import subprocess
@@ -34,14 +34,14 @@ def RunUnitTest(env, target, source):
             s += " --log-file=" + target[0].abspath + " " + test
             cmd = s.split()
     ShEnv = {env['ENV_SHLIB_PATH']: 'build/lib',
-             'HEAPCHECK': 'normal',
-             'PPROF_PATH': 'build/bin/pprof',
+#            'HEAPCHECK': 'normal',
+#            'PPROF_PATH': 'build/bin/pprof',
              'DB_ITERATION_TO_YIELD': '1',
              'PATH': os.environ['PATH']}
     proc = subprocess.Popen(cmd, stdout=logfile, stderr=logfile, env=ShEnv)
 
     # 60 second timeout
-    for i in range(60):
+    for i in range(timeout):
         code = proc.poll()
         if not code is None:
             break
@@ -73,8 +73,18 @@ def TestSuite(env, target, source):
 
 def setup_venv(env, target, venv_name, path=None):
     p = path or env.Dir(env['TOP']).abspath
+    shell_cmd = ' && '.join ([
+        'cd %s' % p,
+        '[ -f ez_setup-0.9.tar.gz ] || curl -o ez_setup-0.9.tar.gz https://pypi.python.org/packages/source/e/ez_setup/ez_setup-0.9.tar.gz',
+        '[ -f Python-2.7.tar.bz2 ] || curl -o Python-2.7.tar.bz2 http://www.python.org/ftp/python/2.7/Python-2.7.tar.bz2',
+        '[ -d Python-2.7 ] || tar xjvf Python-2.7.tar.bz2',
+        '[ -d python2.7 ] || ( cd Python-2.7 && ./configure --prefix=%s/python2.7 && make install ) && ( cd ez_setup-0.9 && ../python2.7/bin/python setup.py install)' % p,
+        '[ -f virtualenv-1.10.1.tar.gz ] || curl -o virtualenv-1.10.1.tar.gz https://pypi.python.org/packages/source/v/virtualenv/virtualenv-1.10.1.tar.gz',
+        '[ -d virtualenv-1.10.1 ] || tar xzvf virtualenv-1.10.1.tar.gz',
+        'python2.7/bin/python virtualenv-1.10.1/virtualenv.py --python=python2.7/bin/python %s',
+    ])
     for t, v in zip(target, venv_name):
-        cmd = env.Command (v, '', 'cd %s && virtualenv %s' % (p, v))
+        cmd = env.Command (v, '', shell_cmd % (v,))
         env.Alias (t, cmd)
         cmd._path = '/'.join ([p, v])
         env[t] = cmd
@@ -136,7 +146,10 @@ def UnitTest(env, name, sources):
 def GenerateBuildInfoCode(env, target, source, path):
     if not os.path.isdir(path):
         os.makedirs(path)
+    env.Command(target=target, source=source, action=BuildInfoAction, chdir=path)
+    return
 
+def BuildInfoAction(env, target, source):
     try:
         build_user = os.environ['USER']
     except KeyError:
@@ -170,7 +183,7 @@ def GenerateBuildInfoCode(env, target, source, path):
         'build-hostname': build_host,
         'build-git-ver': build_git_info
     }
-    jsdata = json.dumps({'build-info': info})
+    jsdata = json.dumps({'build-info': [info]})
 
     h_code = """
 /*
@@ -193,11 +206,11 @@ extern const std::string BuildInfo;
 const std::string BuildInfo = "%(json)s";
 """ % { 'json': jsdata.replace('"', "\\\"") }
 
-    h_file = file(path + '/buildinfo.h', 'w')
+    h_file = file('buildinfo.h', 'w')
     h_file.write(h_code)
     h_file.close()
 
-    cc_file = file(path + '/buildinfo.cc', 'w')
+    cc_file = file('buildinfo.cc', 'w')
     cc_file.write(cc_code)
     cc_file.close()
     return 
@@ -444,6 +457,38 @@ def ThriftGenCppFunc(env, file, async):
     env.Depends(targets, '#/build/bin/thrift')
     return env.ThriftCpp(targets, file)
 
+def ThriftPyBuilder(target, source, env):
+    opath = str(target[0]).rsplit('/',1)[0] 
+    py_opath = opath.rsplit('/',1)[0] + '/'
+    thriftcmd = env.Dir(env['TOP_BIN']).abspath + '/thrift'
+    code = subprocess.call(thriftcmd + ' --gen py:new_style -I src/ -out ' +
+                           py_opath + " " + str(source[0]), shell=True)
+    if code:
+        raise SCons.Errors.StopError(ThriftCodeGeneratorError, 
+                                     'Thrift Compiler Failed')
+#end ThirftPyBuilder
+
+def ThriftSconsEnvPyFunc(env):
+    pybuild = Builder(action = ThriftPyBuilder)
+    env.Append(BUILDERS = {'ThriftPy' : pybuild})
+
+def ThriftGenPyFunc(env, path, target=''):
+    modules = [
+        '__init__.py',
+        'constants.py',
+        'ttypes.py']
+    basename = Basename(path)
+    path_split = basename.rsplit('/', 1)
+    if len(path_split) == 2:
+        mod_dir = path_split[1] + '/'
+    else:
+        mod_dir = path_split[0] + '/'
+    if target[-1] != '/':
+        target += '/'
+    targets = map(lambda module: target + 'gen_py/' + mod_dir + module, modules)
+    env.Depends(targets, '#/build/bin/thrift')
+    return env.ThriftPy(targets, path)
+
 def IFMapBuilderCmd(source, target, env, for_signature):
     output = Basename(source[0].abspath)
     return './tools/generateds/generateDS.py -f -g ifmap-backend -o %s %s' % (output, source[0])
@@ -482,12 +527,56 @@ def CheckBuildConfiguration(conf):
 
     # gcc 4.7.0 generates buggy code when optimization is turned on.
     opt_level = GetOption('opt')
-    if opt_level == 'production' or opt_level == 'profile':
+    if ((opt_level == 'production' or opt_level == 'profile') and \
+        (conf.env['CC'].endswith("gcc") or conf.env['CC'].endswith("g++"))):
         if commands.getoutput(conf.env['CC'] + ' -dumpversion') == "4.7.0":
             print "Unsupported/Buggy compiler gcc 4.7.0 for building " + \
                   "optimized binaries"
             exit(1)
     return conf.Finish()
+
+def PyTestSuiteCov(target, source, env):
+    for test in source:
+        log = test.name + '.log'
+        if env['env_venv']:
+            venv = env['env_venv']
+            try:
+                env['_venv'][log] = venv[0]
+            except KeyError:
+                env['_venv'] = {log: venv[0]}
+        logfile = test.path + '.log'
+        RunUnitTest(env, [env.File(logfile)], [env.File(test)], 300)
+    return None
+
+def PlatformDarwin(env):
+    ver = subprocess.check_output("sw_vers | \grep ProductVersion", shell=True).rstrip('\n')
+    ver = re.match(r'ProductVersion:\s+(\d+\.\d+)', ver).group(1)
+    if float(ver) >= 10.9:
+        return
+
+    if not 'SDKROOT' in env['ENV']:
+
+        # Find Mac SDK version.
+        sdk = '/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX' + ver + '.sdk'
+        env['ENV']['SDKROOT'] = sdk
+
+    if not 'DEVELOPER_BIN_DIR' in env['ENV']:
+        env['ENV']['DEVELOPER_BIN_DIR'] = '/Applications/Xcode.app/Contents/Developer/usr/bin'
+
+    env.AppendENVPath('PATH', env['ENV']['DEVELOPER_BIN_DIR'])
+
+    if not 'DT_TOOLCHAIN_DIR' in env['ENV']:
+        env['ENV']['DT_TOOLCHAIN_DIR'] = '/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain'
+
+    env.AppendENVPath('PATH', env['ENV']['DT_TOOLCHAIN_DIR'] + '/usr/bin')
+
+    env['CXX'] = 'clang++'
+    env.Append(CPPPATH = [env['ENV']['SDKROOT'] + '/usr/include',
+#                         env['ENV']['SDKROOT'] + '/usr/include/c++/v1',
+                          env['ENV']['SDKROOT'] + '/usr/include/c++/4.2.1',
+                          ])
+#   env.Append(LIBPATH = env['ENV']['SDKROOT'] + '/usr/lib')
+#   env.Append(LIBS = 'c++.1')
 
 def SetupBuildEnvironment(conf):
     AddOption('--optimization', dest = 'opt',
@@ -505,6 +594,7 @@ def SetupBuildEnvironment(conf):
     env['TARGET_MACHINE'] = GetOption('target')
 
     if sys.platform == 'darwin':
+        PlatformDarwin(env)
         env['ENV_SHLIB_PATH'] = 'DYLD_LIBRARY_PATH'
     else:
         env['ENV_SHLIB_PATH'] = 'LD_LIBRARY_PATH'
@@ -551,8 +641,13 @@ def SetupBuildEnvironment(conf):
     env.AddMethod(SandeshGenCFunc, "SandeshGenC")
     env.AddMethod(SandeshGenPyFunc, "SandeshGenPy")
     env.AddMethod(ThriftGenCppFunc, "ThriftGenCpp")
+    ThriftSconsEnvPyFunc(env)
+    env.AddMethod(ThriftGenPyFunc, "ThriftGenPy")
     CreateIFMapBuilder(env)
     CreateTypeBuilder(env)
+
+    PyTestSuiteCovBuilder = Builder(action = PyTestSuiteCov)
+    env.Append(BUILDERS = {'PyTestSuiteCov' : PyTestSuiteCovBuilder})
 
     return env
 # SetupBuildEnvironment
