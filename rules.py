@@ -71,29 +71,29 @@ def RunUnitTest(env, target, source, timeout = 300):
         return
     import subprocess
 
-    if env['ENV'].has_key('CONTRAIL_UT_TEST_TIMEOUT'):
-        timeout = int(env['ENV']['CONTRAIL_UT_TEST_TIMEOUT'])
-
     test = str(source[0].abspath)
     logfile = open(target[0].abspath, 'w')
-    #    env['_venv'] = {target: venv}
+
+    ShEnv = env['ENV'].copy()
+    ShEnv.update({env['ENV_SHLIB_PATH']: 'build/lib',
+                  'DB_ITERATION_TO_YIELD': '1',
+                  'TOP_OBJECT_PATH': env['TOP'][1:]})
+    ShEnv.update(GetTestEnvironment(test))
+    if env.get('OPT') == "valgrind":
+        ShEnv['VALGRIND'] = "TRUE"
+        ShEnv['LOG_DISABLE'] = "TRUE"
+
     tgt = target[0].name
     if '_venv' in  env and tgt in env['_venv'] and env['_venv'][tgt]:
         cmd = ['/bin/bash', '-c', 'source %s/bin/activate && %s' % (
                 env[env['_venv'][tgt]]._path, test)]
-    elif env.get('OPT') == 'valgrind':
+    elif env.get('OPT') == 'valgrind' and not 'NO_VALGRIND' in ShEnv:
         cmd = ['valgrind', '--track-origins=yes', '--num-callers=50',
                '--show-possibly-lost=no', '--leak-check=full',
                '--error-limit=no', test]
     else:
         cmd = [test]
 
-    ShEnv = env['ENV'].copy()
-    ShEnv.update({env['ENV_SHLIB_PATH']: 'build/lib',
-                  'DB_ITERATION_TO_YIELD': '1',
-                  'TOP_OBJECT_PATH': env['TOP'][1:]})
-
-    ShEnv.update(GetTestEnvironment(test))
     # Use gprof unless NO_HEAPCHECK is set or in CentOS
     heap_check = ShEnv.has_key('NO_HEAPCHECK') == False
     if heap_check:
@@ -112,6 +112,9 @@ def RunUnitTest(env, target, source, timeout = 300):
         ShEnv['LD_BIND_NOW'] = '1'
 
     proc = subprocess.Popen(cmd, stdout=logfile, stderr=logfile, env=ShEnv)
+
+    if ShEnv.has_key('CONTRAIL_UT_TEST_TIMEOUT'):
+        timeout = int(ShEnv['CONTRAIL_UT_TEST_TIMEOUT'])
 
     # 60 second timeout
     for i in range(timeout):
@@ -1062,7 +1065,7 @@ def SetupBuildEnvironment(conf):
         env['TOP'] = '#build/coverage'
         env.Append(LIBS = 'gcov')
     elif opt_level == 'valgrind':
-        env.Append(CCFLAGS = ['-g', '-O0', '-DDEBUG'])
+        env.Append(CCFLAGS = ['-g', '-O3', '-DVALGRIND'])
         env.Append(LINKFLAGS= ['-g'])
         env['TOP'] = '#build/valgrind'
 
